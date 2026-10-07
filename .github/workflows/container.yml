@@ -23,6 +23,11 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
+      - name: Compute image name
+        # GHCR requires a lowercase image name. github.repository keeps the
+        # owner's casing, so lower it here and reuse it for both tags.
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -35,9 +40,8 @@ jobs:
         with:
           context: .
           push: true
-          # GHCR requires a lowercase image name.
           tags: |
-            ghcr.io/whatyougoby/ping:test
-            ghcr.io/whatyougoby/ping:sha-${{ github.sha }}
+            ${{ env.IMAGE }}:test
+            ${{ env.IMAGE }}:sha-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
