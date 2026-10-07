@@ -1,3 +1,10 @@
+## [1.14.1](https://github.com/WhatYouGoBy/ping/compare/v1.14.0...v1.14.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* **sync:** apply the enable toggle immediately ([88f4960](https://github.com/WhatYouGoBy/ping/commit/88f496061486732ece0857c1f599914ebeb9e791))
+
 # [1.14.0](https://github.com/WhatYouGoBy/ping/compare/v1.13.0...v1.14.0) (2026-10-07)
 
 
