@@ -1,6 +1,6 @@
 # Ping — Project Notes for Claude
 
-Offline-first PWA for organising table-tennis tournaments. All state lives on the user's device. There is no backend.
+Offline-first PWA for organising table-tennis tournaments. State lives on the user's device; an optional, self-hostable sync backend can mirror it across devices via a shared group code.
 
 ## Domain
 
@@ -39,26 +39,38 @@ A "fact engine" surfaces hype lines from local match history: head-to-head domin
 ├── public/{favicon,pwa,pwa-maskable}.svg
 ├── index.html                     # inline pre-paint dark-mode script
 ├── vite.config.ts                 # base from GITHUB_PAGES_BASE env var
+├── Dockerfile                     # build PWA + run the sync server
+├── .githooks/pre-commit           # tests + type-check (install via scripts/install-hooks.sh)
+├── server/                        # sync backend: Node 24, no dependencies
+│   ├── db.js                      # SQLite store (rooms, entities, normalised matches)
+│   ├── app.js                     # HTTP routes (/sync/push, /sync/pull, /matches, /health)
+│   └── index.js                   # bootstrap: serves ./dist + the API
 └── src/
-    ├── main.ts, App.vue, style.css, env.d.ts
+    ├── main.ts                    # app bootstrap + sync wiring
+    ├── App.vue, style.css, env.d.ts
     ├── theme/preset.ts            # InformPreset (Aura + teal palette)
     ├── router/index.ts            # hash mode, lazy views
-    ├── types.ts                   # Player, Match, Tournament, Fact, PingStore
-    ├── stores/tournaments.ts      # Pinia store (persisted)
+    ├── types.ts                   # Player, Match, Tournament, Tombstone, Fact, PingStore
+    ├── stores/
+    │   ├── tournaments.ts         # Pinia store (persisted)
+    │   └── sync.ts                # sync settings, scheduling and status
     ├── lib/                       # pure, unit-tested
     │   ├── id.ts                  # crypto.randomUUID wrapper
+    │   ├── migrate.ts             # v1→v2 store migration (updatedAt, tombstones)
     │   ├── schedule.ts            # round-robin (circle method) + regenerate
     │   ├── bracket.ts             # single-elim with byes, winner promotion
     │   ├── scoring.ts             # apply result, standings, isComplete, champion
     │   ├── facts.ts               # generators + factsAboutPlayers + pickFact
     │   ├── stats.ts               # global player stats, head-to-head, recent results
-    │   └── suggestions.ts         # rank past players for the new-tournament wizard
+    │   ├── suggestions.ts         # rank past players for the new-tournament wizard
+    │   └── sync/                  # client sync: types, config, merge, client, engine
     ├── views/
     │   ├── HomeView.vue           # tournaments list + new-tournament dialog
     │   ├── TournamentView.vue     # tabs: Next / All / Standings|Bracket / Roster
     │   ├── HistoryView.vue
     │   ├── PlayersView.vue        # sortable global stats
-    │   └── PlayerView.vue         # single-player detail + H2H + recent
+    │   ├── PlayerView.vue         # single-player detail + H2H + recent
+    │   └── SettingsView.vue       # enable sync, server URL, group code, status
     └── components/                # NewTournamentDialog, PlayerPicker, MatchCard,
                                    # ScoreEntryDialog, RoundRobinTable, BracketView,
                                    # RosterPanel, FactCard
@@ -66,11 +78,15 @@ A "fact engine" surfaces hype lines from local match history: head-to-head domin
 
 ## Data model & persistence
 
-`PingStore` (`src/types.ts`) is the entire app state — `{ version, players, tournaments }`. It is the persisted JSON under `localStorage['ping.v1']`. `version` is reserved for future migrations; bump it and write a migrator if the shape changes.
+`PingStore` (`src/types.ts`) is the entire app state — `{ version, players, tournaments, tombstones }`. It is the persisted JSON under `localStorage['ping.v1']`.
+
+Schema **version 2** adds an optional `updatedAt` to every player, tournament and match, plus a `tombstones` list of deleted top-level entities (`{ kind, id, updatedAt }`). `updatedAt` is optional so pre-sync data stays valid: the store stamps it on every mutation and `src/lib/migrate.ts` backfills it on load (`createdAt`/`startedAt`/`playedAt`). Hydration runs the migrator via the persistence plugin's `afterHydrate` hook, so a v1 store migrates in place rather than appearing empty. **Bump `STORE_VERSION` and extend the migrator if the shape changes.**
 
 A `Match` records winner-side + loser-score; the winner's score is always `tournament.maxScore`. Knockout matches additionally have `slot` (left-to-right position in their round) and may be `bye: true` (auto-advanced placeholder).
 
 A `Tournament` carries `bracketLocked: true` once a knockout starts — round-robin tournaments stay editable.
+
+Deleting a tournament or an unused player writes a tombstone (rather than only removing the entity) so the deletion propagates instead of being resurrected by the next sync pull. Matches are deleted with their tournament and need no tombstone.
 
 ## State store conventions
 
@@ -84,6 +100,18 @@ A `Tournament` carries `bracketLocked: true` once a knockout starts — round-ro
 - `recordResult` — applies the result and, for knockout, auto-promotes the winner to the next round via `promoteWinner`. Also flips the tournament to `'completed'` when the final completes.
 
 Mutations happen through these actions; do not mutate `state.tournaments` from a component directly.
+
+Two additional actions serve sync: `syncSnapshot()` returns the full store as `{ players, tournaments, tombstones }` for pushing, and `applySyncBundle(bundle)` merges a pulled bundle with last-write-wins and returns whether local state changed (it is a no-op when nothing changed, so it cannot retrigger the mutation subscriber).
+
+## Sync
+
+Optional, opt-in, and additive — the app is fully functional without it.
+
+- **Settings** live under localStorage key `ping.sync.v1` (`src/lib/sync/config.ts`): server URL, group code, cursor, last-synced time. The group code is the room secret and the bearer token; anyone with it shares a room.
+- **Trigger points** (`src/stores/sync.ts`): app start, a debounced reschedule after every tournaments-store mutation, browser `online`, and returning to the tab. A manual "Sync now" lives in the settings view.
+- **Protocol**: `pull(since=cursor)` → merge locally → `push(full snapshot)`. Merge is per-entity last-write-wins on `updatedAt`; a tombstone removes a live entity unless the live copy is newer, and a newer edit resurrects a tombstoned entity. See `src/lib/sync/merge.ts` (pure, unit-tested) and `src/lib/sync/engine.ts`.
+- **Backend** (`server/`): plain Node 24, `node:http` + `node:sqlite`, no dependencies. Rooms are isolated by group code; each room has a monotonic `rev`. Tournaments are stored as JSON payloads *and* their matches are projected into a normalised `matches` table (kept in step, tombstoned when removed) so match data is durable and queryable at `GET /matches`.
+- **Serving**: `server/index.js` serves the built `dist/` and the API from one process, so the deployed app uses its own origin as the sync URL. `Dockerfile` builds the PWA and runs the server.
 
 ## UI conventions
 
@@ -106,16 +134,24 @@ Manifest is generated by `vite-plugin-pwa` in `vite.config.ts`. Icons are SVGs (
 ```bash
 bun install                  # uses corp Artifactory via bunfig.toml
 bun run dev                  # http://localhost:5173
-bun test src/lib             # 27 tests across the pure modules
+bun test src/lib             # pure-module unit tests
+bun run test:server          # sync-backend tests (node --test)
+bun run start:server         # serve ./dist + the API on :8080
 bun run build                # vue-tsc -b && vite build → dist/
 bun run preview              # serve the built bundle locally
+scripts/install-hooks.sh --worktree   # enable the pre-commit checks for this worktree
 ```
+
+The pre-commit hook (`.githooks/pre-commit`) runs the frontend tests, a full
+`vue-tsc` type-check and, when `server/` exists, the backend tests. It fails
+closed when `bun` is missing.
 
 Do **not** delete `bunfig.toml` or its corp registry URL — installs locally fail without it because the public registry is behind a TLS-intercepting proxy that doesn't include the npm root in the trust store. CI rewrites these files; locally they must remain.
 
 ## Testing
 
 - Tests live next to the module: `src/lib/foo.ts` ↔ `src/lib/foo.test.ts`.
+- The sync backend is tested separately with the built-in runner: `server/*.test.js` run under `node --test` (`bun run test:server`). Keep backend tests dependency-free.
 - Use `bun:test` (`describe`, `test`, `expect`).
 - Tests import siblings via **relative paths** (`'./schedule'`, `'../types'`), not via the `@/` alias — Bun's path-mapping discovery doesn't follow the project's tsconfig references.
 - Tests are excluded from the production build (`tsconfig.app.json` excludes `*.test.ts`); only `bun test` runs them.

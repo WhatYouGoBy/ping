@@ -4,7 +4,7 @@
 
 A small offline-first PWA for organizing table-tennis tournaments. Round-robin and single-elimination knockout, fast tap-the-loser score entry, mid-tournament roster edits (round-robin), persistent local history, suggested players from previous runs, and a "random facts" engine that mines your match history.
 
-All data lives in `localStorage` on the device. There is no server.
+By default all data lives in `localStorage` on the device — no account, no server. An optional self-hostable **sync backend** (see [Sync](#sync-optional)) can back the data up and share it across devices through a group code.
 
 ## Stack
 
@@ -25,6 +25,40 @@ bun run build        # production bundle in ./dist
 bun run preview      # serve the production build
 ```
 
+## Sync backend (optional)
+
+The sync service is plain Node 24 (`node:http` + `node:sqlite`), with no npm
+dependencies:
+
+```bash
+bun run test:server    # backend unit tests (node --test)
+bun run start:server   # serves ./dist plus the API on http://localhost:8080
+```
+
+Configuration (environment variables):
+
+| Variable     | Default            | Purpose                                  |
+| ------------ | ------------------ | ---------------------------------------- |
+| `PORT`       | `8080`             | Listen port                              |
+| `HOST`       | `0.0.0.0`          | Listen address                           |
+| `PING_DB`    | `./data/ping.sqlite` | SQLite database file (created if absent) |
+| `STATIC_DIR` | `./dist`           | Built PWA to serve                       |
+
+A container image that builds the PWA and serves both is in `Dockerfile`:
+
+```bash
+docker build -t ping .
+docker run -p 8080:8080 -v ping-data:/data ping
+```
+
+## Enabling sync in the app
+
+Open **Sync** in the app, turn it on, keep the server URL (prefilled with the
+app's own address) and choose a **group code** — any shared secret. Every device
+that uses the same code shares the same players, tournaments and match history.
+The app stays offline-first: changes are queued locally and pushed when the
+server is reachable, and merging is per-entity last-write-wins.
+
 ## Deploy (GitHub Pages)
 
 The included workflow at `.github/workflows/deploy.yml` builds and deploys to GitHub Pages on every push to `main`.
@@ -39,4 +73,7 @@ The Vite `base` is set from the `GITHUB_PAGES_BASE` env var that the workflow in
 
 ## Data
 
-Everything is in one localStorage key: `ping.v1`. Clearing site data resets the app. There's no export yet — the data model in `src/types.ts` is straightforward JSON if you want to back it up manually.
+Everything lives in one localStorage key: `ping.v1` (schema v2, migrated from v1 on load). Clearing site data resets the app. The JSON shape is defined in `src/types.ts`; **Export** and **Import** in the header move the whole store to a file.
+
+When sync is enabled the server keeps the same entities plus a normalised
+`matches` table, exposed read-only at `GET /matches` (see [Sync](#sync-optional)).
