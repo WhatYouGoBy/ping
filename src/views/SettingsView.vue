@@ -21,9 +21,7 @@ onMounted(() => {
   code.value = sync.code
 })
 
-const dirty = computed(
-  () => enabled.value !== sync.enabled || url.value.trim() !== sync.url || code.value.trim() !== sync.code,
-)
+const dirty = computed(() => url.value.trim() !== sync.url || code.value.trim() !== sync.code)
 
 const statusSeverity = computed(() => {
   switch (sync.status) {
@@ -42,6 +40,17 @@ function save() {
   sync.configure({ enabled: enabled.value, url: url.value.trim(), code: code.value.trim() })
   saved.value = true
   setTimeout(() => (saved.value = false), 1500)
+}
+
+/**
+ * The enable toggle is a direct action: apply it (together with whatever is
+ * currently in the fields) immediately, rather than waiting for a separate
+ * Save. Otherwise toggling on after saving a code silently does nothing until
+ * the next Save.
+ */
+function onEnableChange(value: boolean) {
+  enabled.value = value
+  sync.configure({ enabled: value, url: url.value.trim(), code: code.value.trim() })
 }
 
 function syncNow() {
@@ -79,7 +88,7 @@ function fmt(ts: number | null): string {
           <div class="font-medium">Enable sync</div>
           <div class="text-xs opacity-70">Offline changes are queued and pushed automatically.</div>
         </div>
-        <ToggleSwitch v-model="enabled" />
+        <ToggleSwitch :model-value="enabled" @update:model-value="onEnableChange" />
       </div>
 
       <div class="flex flex-col gap-2">
