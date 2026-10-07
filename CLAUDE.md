@@ -39,7 +39,7 @@ A "fact engine" surfaces hype lines from local match history: head-to-head domin
 ├── public/{favicon,pwa,pwa-maskable}.svg
 ├── index.html                     # inline pre-paint dark-mode script
 ├── vite.config.ts                 # base from GITHUB_PAGES_BASE env var
-├── Dockerfile                     # build PWA + run the sync server
+├── Dockerfile                     # run the sync API (PWA deploys separately)
 ├── .githooks/pre-commit           # tests + type-check (install via scripts/install-hooks.sh)
 ├── server/                        # sync backend: Node 24, no dependencies
 │   ├── db.js                      # SQLite store (rooms, entities, normalised matches)
@@ -111,7 +111,7 @@ Optional, opt-in, and additive — the app is fully functional without it.
 - **Trigger points** (`src/stores/sync.ts`): app start, a debounced reschedule after every tournaments-store mutation, browser `online`, and returning to the tab. A manual "Sync now" lives in the settings view.
 - **Protocol**: `pull(since=cursor)` → merge locally → `push(full snapshot)`. Merge is per-entity last-write-wins on `updatedAt`; a tombstone removes a live entity unless the live copy is newer, and a newer edit resurrects a tombstoned entity. See `src/lib/sync/merge.ts` (pure, unit-tested) and `src/lib/sync/engine.ts`.
 - **Backend** (`server/`): plain Node 24, `node:http` + `node:sqlite`, no dependencies. Rooms are isolated by group code; each room has a monotonic `rev`. Tournaments are stored as JSON payloads *and* their matches are projected into a normalised `matches` table (kept in step, tombstoned when removed) so match data is durable and queryable at `GET /matches`.
-- **Serving**: `server/index.js` serves the built `dist/` and the API from one process, so the deployed app uses its own origin as the sync URL. `Dockerfile` builds the PWA and runs the server.
+- **Serving**: `server/index.js` serves the API and, when `STATIC_DIR` points at a build, the PWA from one process. The `Dockerfile` runs the API only; the PWA is deployed separately (e.g. GitHub Pages) and points back via `SYNC_URL`.
 
 ## UI conventions
 
