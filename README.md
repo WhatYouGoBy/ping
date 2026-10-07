@@ -44,12 +44,16 @@ Configuration (environment variables):
 | `PING_DB`    | `./data/ping.sqlite` | SQLite database file (created if absent) |
 | `STATIC_DIR` | `./dist`           | Built PWA to serve                       |
 
-A container image that builds the PWA and serves both is in `Dockerfile`:
+A container image that runs just the sync API is in `Dockerfile`:
 
 ```bash
 docker build -t ping .
 docker run -p 8080:8080 -v ping-data:/data ping
 ```
+
+The PWA is deployed separately (for example to GitHub Pages) and points at this
+backend through its `SYNC_URL` build variable. Serving the built `dist/` from the
+same process is still supported via `STATIC_DIR` (as `bun run start:server` does).
 
 Build-time configuration (inlined into the PWA bundle):
 
@@ -68,7 +72,7 @@ server is reachable, and merging is per-entity last-write-wins.
 
 ## Deploy (GitHub Pages)
 
-The included workflow at `.github/workflows/deploy.yml` builds and deploys to GitHub Pages on every push to `main`.
+The included workflow at `.github/workflows/deploy.yml` builds the PWA and deploys it to GitHub Pages on every push to `main`. Run the sync backend as the container above and set the `SYNC_URL` variable (step 4) so the deployed app prefills the backend's address.
 
 One-time repo setup:
 
