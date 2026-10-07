@@ -329,7 +329,6 @@ export const useTournamentsStore = defineStore('ping', {
      * per-entity last-write-wins. Returns true when anything changed locally.
      */
     applySyncBundle(bundle: SyncBundle): boolean {
-      const before = snapshotSignature(this.players, this.tournaments, this.tombstones)
       const merged = mergeRemote(
         {
           version: this.version,
@@ -339,10 +338,18 @@ export const useTournamentsStore = defineStore('ping', {
         },
         bundle,
       )
+      // Only touch state when something actually changed, so the mutation
+      // subscriber that schedules the next sync does not spin.
+      if (
+        snapshotSignature(merged.players, merged.tournaments, merged.tombstones) ===
+        snapshotSignature(this.players, this.tournaments, this.tombstones)
+      ) {
+        return false
+      }
       this.players = merged.players
       this.tournaments = merged.tournaments
       this.tombstones = merged.tombstones
-      return snapshotSignature(this.players, this.tournaments, this.tombstones) !== before
+      return true
     },
   },
 

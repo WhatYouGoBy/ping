@@ -33,6 +33,11 @@ const routes: RouteRecordRaw[] = [
     name: 'import',
     component: () => import('@/views/ImportView.vue'),
   },
+  {
+    path: '/settings',
+    name: 'settings',
+    component: () => import('@/views/SettingsView.vue'),
+  },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
 

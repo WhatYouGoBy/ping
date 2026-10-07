@@ -8,6 +8,7 @@ import ConfirmDialog from 'primevue/confirmdialog'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 import { useTournamentsStore } from '@/stores/tournaments'
+import { useSyncStore } from '@/stores/sync'
 import { exportFilename } from '@/lib/transfer'
 import { downloadJSON } from '@/utils/download'
 import { parseChangelog, releasesBetween, type Release } from '@/lib/changelog'
@@ -18,6 +19,7 @@ const router = useRouter()
 const dark = ref(true)
 const version = __APP_VERSION__
 const store = useTournamentsStore()
+const sync = useSyncStore()
 const toast = useToast()
 const confirm = useConfirm()
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -38,7 +40,33 @@ const items = computed(() => [
     icon: 'pi pi-history',
     command: () => router.push({ name: 'history' }),
   },
+  {
+    label: 'Sync',
+    icon: 'pi pi-cloud',
+    command: () => router.push({ name: 'settings' }),
+  },
 ])
+
+const syncIndicator = computed(() => {
+  switch (sync.status) {
+    case 'synced':
+      return { icon: 'pi pi-cloud-upload', severity: 'success' as const, tip: 'Synced' }
+    case 'syncing':
+      return { icon: 'pi pi-spin pi-spinner', severity: 'info' as const, tip: 'Syncing…' }
+    case 'error':
+      return { icon: 'pi pi-exclamation-triangle', severity: 'danger' as const, tip: `Sync error: ${sync.lastError ?? ''}` }
+    case 'offline':
+      return { icon: 'pi pi-cloud', severity: 'warn' as const, tip: 'Offline — changes queued' }
+    case 'idle':
+      return { icon: 'pi pi-cloud', severity: 'secondary' as const, tip: 'Sync ready' }
+    default:
+      return { icon: 'pi pi-cloud', severity: 'secondary' as const, tip: 'Sync off' }
+  }
+})
+
+const footerNote = computed(() =>
+  sync.configured ? sync.statusLabel : 'data stays on this device',
+)
 
 function toggleDark() {
   dark.value = !dark.value
@@ -158,6 +186,16 @@ onMounted(() => {
     <template #end>
       <div class="flex items-center gap-2">
         <Button
+          :icon="syncIndicator.icon"
+          :severity="syncIndicator.severity"
+          size="small"
+          text
+          rounded
+          :aria-label="syncIndicator.tip"
+          v-tooltip.bottom="syncIndicator.tip"
+          @click="router.push({ name: 'settings' })"
+        />
+        <Button
           v-if="canInstall"
           icon="pi pi-download"
           label="Install"
@@ -210,7 +248,7 @@ onMounted(() => {
   </main>
 
   <footer class="text-center text-xs opacity-60 py-3">
-    Ping · v{{ version }} · data stays on this device
+    Ping · v{{ version }} · {{ footerNote }}
   </footer>
 
   <Toast position="bottom-center" />
