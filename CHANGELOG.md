@@ -1,3 +1,10 @@
+# [1.14.0](https://github.com/WhatYouGoBy/ping/compare/v1.13.0...v1.14.0) (2026-10-07)
+
+
+### Features
+
+* **sync:** allow a build-time sync server URL override ([5305634](https://github.com/WhatYouGoBy/ping/commit/5305634f3499327211f1c5585c4a445e0ee848e9))
+
 # [1.13.0](https://github.com/WhatYouGoBy/ping/compare/v1.12.0...v1.13.0) (2026-10-07)
 
 
