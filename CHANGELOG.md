@@ -1,3 +1,12 @@
+# [1.13.0](https://github.com/WhatYouGoBy/ping/compare/v1.12.0...v1.13.0) (2026-10-07)
+
+
+### Features
+
+* **sync:** add Node sync backend with SQLite match storage ([b5e430b](https://github.com/WhatYouGoBy/ping/commit/b5e430b2765df69a6623a85acfee8a3b9e6f35b6))
+* **sync:** client sync engine and settings UI ([f7d053e](https://github.com/WhatYouGoBy/ping/commit/f7d053e4abb468bb3dab04776c27584df5f7e97a))
+* **sync:** store schema v2 with tombstones and offline-first merge ([f66196e](https://github.com/WhatYouGoBy/ping/commit/f66196e9b10b3025223fe6027836f88771496312))
+
 # [1.12.0](https://github.com/rgrund-inform/ping/compare/v1.11.0...v1.12.0) (2026-09-23)
 
 
