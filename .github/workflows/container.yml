@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - feature/match-data-sync
     paths-ignore:
       - '**.md'
   workflow_dispatch:
