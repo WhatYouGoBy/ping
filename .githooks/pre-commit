@@ -1,0 +1,30 @@
+#!/usr/bin/env sh
+# Repository-managed pre-commit hook.
+#
+# Runs every check that is locally runnable and fails closed: when a required
+# tool is missing the commit is blocked instead of silently passing. Install it
+# with `scripts/install-hooks.sh` (see the README).
+set -eu
+
+# Bun installs to ~/.bun/bin by default; make sure hooks run without a login shell.
+if [ -d "$HOME/.bun/bin" ]; then
+  PATH="$HOME/.bun/bin:$PATH"
+  export PATH
+fi
+
+if ! command -v bun >/dev/null 2>&1; then
+  echo "pre-commit: 'bun' not found on PATH; install Bun (https://bun.sh) then retry." >&2
+  exit 1
+fi
+
+echo "pre-commit: bun test src/lib"
+bun test src/lib
+
+echo "pre-commit: type-check (vue-tsc -b)"
+bunx vue-tsc -b
+
+# The sync backend is plain Node and tested with the built-in test runner.
+if [ -d server ] && command -v node >/dev/null 2>&1; then
+  echo "pre-commit: node --test server"
+  node --test server
+fi
