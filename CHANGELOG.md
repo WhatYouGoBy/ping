@@ -1,3 +1,10 @@
+# [1.15.0](https://github.com/WhatYouGoBy/ping/compare/v1.14.1...v1.15.0) (2026-10-07)
+
+
+### Features
+
+* **deploy:** run the container as a backend-only sync API ([1b87dbb](https://github.com/WhatYouGoBy/ping/commit/1b87dbbb981d62def4fcf8790f8a313d8727b5ad))
+
 ## [1.14.1](https://github.com/WhatYouGoBy/ping/compare/v1.14.0...v1.14.1) (2026-10-07)
 
 
