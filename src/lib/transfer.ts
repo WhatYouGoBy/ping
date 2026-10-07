@@ -1,4 +1,5 @@
 import type { Match, Player, PingStore, PlayerId, Tournament, TournamentMode, TournamentStatus } from '../types'
+import { migrateStore } from './migrate'
 
 export interface ExportFile {
   /** Discriminator so we don't accidentally try to import unrelated JSON. */
@@ -15,6 +16,7 @@ export function buildExport(store: PingStore): string {
       version: store.version,
       players: store.players,
       tournaments: store.tournaments,
+      tombstones: store.tombstones,
     },
   }
   return JSON.stringify(file, null, 2)
@@ -37,7 +39,7 @@ export function parseExport(raw: string): ParseResult {
   const candidate = parsed.app === 'ping' && isObject(parsed.store) ? parsed.store : parsed
   if (!isObject(candidate)) return { ok: false, error: 'File is not a Ping export.' }
 
-  if (candidate.version !== 1) {
+  if (candidate.version !== 1 && candidate.version !== 2) {
     return { ok: false, error: `Unsupported export version (${String(candidate.version)}).` }
   }
   if (!isObject(candidate.players)) return { ok: false, error: 'Missing players map.' }
@@ -57,7 +59,14 @@ export function parseExport(raw: string): ParseResult {
     tournaments.push(result.value)
   }
 
-  return { ok: true, data: { version: 1, players, tournaments } }
+  // Normalise both v1 (no updatedAt/tombstones) and v2 payloads.
+  const data = migrateStore({
+    version: candidate.version,
+    players,
+    tournaments,
+    tombstones: candidate.tombstones,
+  })
+  return { ok: true, data }
 }
 
 export function validateTournament(
@@ -109,6 +118,7 @@ export function validateTournament(
     players: [...t.players],
     matches,
     bracketLocked: t.bracketLocked,
+    updatedAt: typeof t.updatedAt === 'number' ? t.updatedAt : undefined,
   }
   return { ok: true, value }
 }

@@ -5,11 +5,15 @@ import type {
   PlayerId,
   ScoringMode,
   Seeding,
+  Tombstone,
   Tournament,
   TournamentId,
   TournamentMode,
 } from '@/types'
 import { uid } from '@/lib/id'
+import { STORE_KEY, migrateStoreInPlace } from '@/lib/migrate'
+import { mergeRemote, buildPushBundle } from '@/lib/sync/merge'
+import type { SyncBundle } from '@/lib/sync/types'
 import {
   buildRoundRobinMatches,
   regenerateRoundRobin,
@@ -22,16 +26,31 @@ import { historicalWinRate, suggestPlayers } from '@/lib/suggestions'
 import { buildExport, parseExport, remapTournament } from '@/lib/transfer'
 
 interface State {
-  version: 1
+  version: 2
   players: Record<PlayerId, Player>
   tournaments: Tournament[]
+  tombstones: Tombstone[]
+}
+
+/** Stamp an entity's modification time. Every mutating action calls this. */
+function touch<T extends { updatedAt?: number }>(e: T): T {
+  e.updatedAt = Date.now()
+  return e
+}
+
+/** Stamp a match and the tournament that owns it. */
+function touchMatchAndTournament(t: Tournament, matchId: string): void {
+  const m = t.matches.find((x) => x.id === matchId)
+  if (m) touch(m)
+  touch(t)
 }
 
 export const useTournamentsStore = defineStore('ping', {
   state: (): State => ({
-    version: 1,
+    version: 2,
     players: {},
     tournaments: [],
+    tombstones: [],
   }),
 
   getters: {
@@ -60,7 +79,8 @@ export const useTournamentsStore = defineStore('ping', {
         (p) => p.name.toLowerCase() === trimmed.toLowerCase(),
       )
       if (existing) return existing
-      const player: Player = { id: uid(), name: trimmed, createdAt: Date.now() }
+      const now = Date.now()
+      const player: Player = { id: uid(), name: trimmed, createdAt: now, updatedAt: now }
       this.players[player.id] = player
       return player
     },
@@ -71,11 +91,15 @@ export const useTournamentsStore = defineStore('ping', {
       const trimmed = name.trim()
       if (!trimmed) return
       p.name = trimmed
+      touch(p)
     },
 
     deletePlayer(id: PlayerId): void {
       const inUse = this.tournaments.some((t) => t.players.includes(id))
       if (inUse) throw new Error('player participated in a tournament; cannot delete')
+      if (this.players[id]) {
+        this.tombstones.push({ kind: 'player', id, updatedAt: Date.now() })
+      }
       delete this.players[id]
     },
 
@@ -98,6 +122,7 @@ export const useTournamentsStore = defineStore('ping', {
         seeding: input.mode === 'knockout' ? input.seeding ?? 'win-rate' : undefined,
         status: 'setup',
         createdAt: Date.now(),
+        updatedAt: Date.now(),
         players: [...input.players],
         matches: [],
         bracketLocked: false,
@@ -112,6 +137,7 @@ export const useTournamentsStore = defineStore('ping', {
       // Replace the roster with the given order; only allowed for knockout.
       if (t.mode !== 'knockout') return
       t.players = [...order]
+      touch(t)
     },
 
     startTournament(id: TournamentId): void {
@@ -133,6 +159,7 @@ export const useTournamentsStore = defineStore('ping', {
       }
       t.status = 'running'
       t.startedAt = Date.now()
+      touch(t)
     },
 
     addPlayerToTournament(id: TournamentId, pid: PlayerId): void {
@@ -146,6 +173,7 @@ export const useTournamentsStore = defineStore('ping', {
       if (t.status === 'running' && t.mode === 'round-robin') {
         t.matches = regenerateRoundRobin(t.matches, t.players)
       }
+      touch(t)
     },
 
     removePlayerFromTournament(id: TournamentId, pid: PlayerId): void {
@@ -158,6 +186,7 @@ export const useTournamentsStore = defineStore('ping', {
       if (t.status === 'running' && t.mode === 'round-robin') {
         t.matches = regenerateRoundRobin(t.matches, t.players)
       }
+      touch(t)
     },
 
     /** `loserScore` is null for win-only (quick) tournaments. */
@@ -170,6 +199,7 @@ export const useTournamentsStore = defineStore('ping', {
       const t = this.tournament(tournamentId)
       if (!t) return
       applyResult(t, matchId, winnerSide, loserScore)
+      touchMatchAndTournament(t, matchId)
     },
 
     /** `loserScore` is null for win-only (quick) tournaments. */
@@ -182,6 +212,7 @@ export const useTournamentsStore = defineStore('ping', {
       const t = this.tournament(tournamentId)
       if (!t) return
       editResult(t, matchId, winnerSide, loserScore)
+      touchMatchAndTournament(t, matchId)
     },
 
     /** Randomise the order of the remaining matches (round-robin only). */
@@ -189,6 +220,7 @@ export const useTournamentsStore = defineStore('ping', {
       const t = this.tournament(id)
       if (!t || t.status !== 'running' || t.mode !== 'round-robin') return
       t.matches = shuffleUpcomingMatches(t.matches)
+      touch(t)
     },
 
     /**
@@ -199,6 +231,7 @@ export const useTournamentsStore = defineStore('ping', {
       const t = this.tournament(id)
       if (!t || t.status !== 'running' || t.mode !== 'round-robin') return
       t.matches = smartShuffleUpcomingMatches(t.matches)
+      touch(t)
     },
 
     // ---- views ----
@@ -218,6 +251,8 @@ export const useTournamentsStore = defineStore('ping', {
     },
 
     deleteTournament(id: TournamentId): void {
+      if (!this.tournaments.some((t) => t.id === id)) return
+      this.tombstones.push({ kind: 'tournament', id, updatedAt: Date.now() })
       this.tournaments = this.tournaments.filter((t) => t.id !== id)
     },
 
@@ -227,15 +262,17 @@ export const useTournamentsStore = defineStore('ping', {
         version: this.version,
         players: this.players,
         tournaments: this.tournaments,
+        tombstones: this.tombstones,
       })
     },
 
     importJSON(raw: string): void {
       const result = parseExport(raw)
       if (!result.ok) throw new Error(result.error)
-      this.version = result.data.version
+      this.version = 2
       this.players = result.data.players
       this.tournaments = result.data.tournaments
+      this.tombstones = result.data.tombstones
     },
 
     /**
@@ -271,13 +308,68 @@ export const useTournamentsStore = defineStore('ping', {
       }
       const newId = uid()
       const t = remapTournament(data.tournament, playerIdMap, newId)
+      touch(t)
       this.tournaments.push(t)
       return newId
+    },
+
+    // ---- sync ----
+    /** Full local snapshot to push to the sync server. */
+    syncSnapshot(): SyncBundle {
+      return buildPushBundle({
+        version: this.version,
+        players: this.players,
+        tournaments: this.tournaments,
+        tombstones: this.tombstones,
+      })
+    },
+
+    /**
+     * Merge a bundle pulled from the sync server into local state with
+     * per-entity last-write-wins. Returns true when anything changed locally.
+     */
+    applySyncBundle(bundle: SyncBundle): boolean {
+      const before = snapshotSignature(this.players, this.tournaments, this.tombstones)
+      const merged = mergeRemote(
+        {
+          version: this.version,
+          players: this.players,
+          tournaments: this.tournaments,
+          tombstones: this.tombstones,
+        },
+        bundle,
+      )
+      this.players = merged.players
+      this.tournaments = merged.tournaments
+      this.tombstones = merged.tombstones
+      return snapshotSignature(this.players, this.tournaments, this.tombstones) !== before
     },
   },
 
   persist: {
-    key: 'ping.v1',
+    key: STORE_KEY,
     storage: localStorage,
+    // v1 → v2: backfill `updatedAt` and add the tombstones list.
+    afterHydrate: (context) => {
+      migrateStoreInPlace(context.store.$state)
+    },
   },
 })
+
+/** Cheap change detector used to decide whether a pull altered local state. */
+function snapshotSignature(
+  players: Record<PlayerId, Player>,
+  tournaments: Tournament[],
+  tombstones: Tombstone[],
+): string {
+  return JSON.stringify({
+    p: Object.values(players).map((x) => [x.id, x.updatedAt ?? x.createdAt, x.name]),
+    t: tournaments.map((x) => [
+      x.id,
+      x.updatedAt ?? x.startedAt ?? x.createdAt,
+      x.status,
+      x.matches.length,
+    ]),
+    d: tombstones.map((x) => [x.kind, x.id, x.updatedAt]),
+  })
+}

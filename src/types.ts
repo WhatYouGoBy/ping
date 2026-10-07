@@ -12,6 +12,12 @@ export interface Player {
   id: PlayerId
   name: string
   createdAt: number
+  /**
+   * Last local modification time, used by the sync engine for last-write-wins
+   * conflict resolution. Optional so pre-sync data stays valid; the store
+   * stamps it on every mutation and the migrator backfills older entries.
+   */
+  updatedAt?: number
 }
 
 export interface Match {
@@ -30,6 +36,8 @@ export interface Match {
   playedAt?: number
   /** Auto-advanced bye match (knockout only). */
   bye?: boolean
+  /** Last local modification time; see {@link Player.updatedAt}. */
+  updatedAt?: number
 }
 
 export interface Tournament {
@@ -52,12 +60,30 @@ export interface Tournament {
   players: PlayerId[]
   matches: Match[]
   bracketLocked: boolean
+  /** Last local modification time; see {@link Player.updatedAt}. */
+  updatedAt?: number
+}
+
+/** Kinds of top-level entities that support deletion tombstones. */
+export type EntityKind = 'player' | 'tournament'
+
+/**
+ * A delete marker for a top-level entity. Kept so a deletion on one device
+ * propagates to the others instead of being silently resurrected by a later
+ * pull. Matches are deleted with their tournament, so they need no tombstone.
+ */
+export interface Tombstone {
+  kind: EntityKind
+  id: string
+  updatedAt: number
 }
 
 export interface PingStore {
-  version: 1
+  /** 1 = pre-sync. 2 = entities carry `updatedAt` and deletions are tombstoned. */
+  version: 1 | 2
   players: Record<PlayerId, Player>
   tournaments: Tournament[]
+  tombstones: Tombstone[]
 }
 
 export interface Fact {
