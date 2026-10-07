@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { loadSyncConfig, saveSyncConfig } from '@/lib/sync/config'
+import { defaultSyncUrl, loadSyncConfig, saveSyncConfig } from '@/lib/sync/config'
 import { runSync } from '@/lib/sync/engine'
 import { useTournamentsStore } from '@/stores/tournaments'
 
@@ -12,6 +12,15 @@ let wired = false
 
 function currentOrigin(): string {
   return typeof window === 'undefined' ? '' : window.location.origin
+}
+
+/**
+ * Build-time sync URL override (`SYNC_URL`). Vite replaces `__SYNC_URL__` with
+ * a string literal; the typeof guard keeps this safe where the define is absent
+ * (e.g. the Bun test runner).
+ */
+function buildSyncUrl(): string {
+  return typeof __SYNC_URL__ === 'string' ? __SYNC_URL__ : ''
 }
 
 function isOnline(): boolean {
@@ -54,7 +63,7 @@ export const useSyncStore = defineStore('sync', {
   actions: {
     /** Load settings, wire lifecycle listeners, and run an initial sync. */
     init() {
-      const cfg = loadSyncConfig(currentOrigin())
+      const cfg = loadSyncConfig(defaultSyncUrl(buildSyncUrl(), currentOrigin()))
       this.enabled = cfg.enabled
       this.url = cfg.url
       this.code = cfg.code

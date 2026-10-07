@@ -2,6 +2,15 @@ import type { SyncConfig } from './types'
 
 export const SYNC_KEY = 'ping.sync.v1'
 
+/**
+ * Pick the prefill for the sync server URL. A build-time override (the
+ * `SYNC_URL` env var, inlined as `__SYNC_URL__`) wins; otherwise fall back to
+ * the page's own origin, which is correct when the sync backend serves the app.
+ */
+export function defaultSyncUrl(buildUrl: string, origin: string): string {
+  return buildUrl.trim() || origin
+}
+
 export function defaultSyncConfig(url = ''): SyncConfig {
   return {
     enabled: false,

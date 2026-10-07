@@ -51,10 +51,17 @@ docker build -t ping .
 docker run -p 8080:8080 -v ping-data:/data ping
 ```
 
+Build-time configuration (inlined into the PWA bundle):
+
+| Variable   | Default   | Purpose                                                                                                                                        |
+| ---------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SYNC_URL` | *(empty)* | Default sync server URL. Empty means "use the app's own origin" (correct when the sync backend serves the app). Set it when the app is hosted elsewhere, e.g. a GitHub Pages build pointing at a separate sync server. It only prefills the field; users can still change the URL in **Sync** settings. |
+
 ## Enabling sync in the app
 
 Open **Sync** in the app, turn it on, keep the server URL (prefilled with the
-app's own address) and choose a **group code** — any shared secret. Every device
+app's own address, or with `SYNC_URL` when the build sets it) and choose a
+**group code** — any shared secret. Every device
 that uses the same code shares the same players, tournaments and match history.
 The app stays offline-first: changes are queued locally and pushed when the
 server is reachable, and merging is per-entity last-write-wins.
@@ -68,6 +75,7 @@ One-time repo setup:
 1. Push the repo to GitHub.
 2. **Settings → Pages → Build and deployment → Source = "GitHub Actions"**.
 3. Push to `main`; the action publishes to `https://<user>.github.io/<repo>/`.
+4. Optional: add a repository variable `SYNC_URL` (**Settings → Secrets and variables → Actions → Variables**) pointing at a separate sync server, so a Pages-hosted build prefills it — e.g. `https://ping.whatyougoby.com`.
 
 The Vite `base` is set from the `GITHUB_PAGES_BASE` env var that the workflow injects, so the same build runs locally at `/` and on Pages at `/<repo>/`. Hash routing is used to avoid the SPA-fallback dance.
 
