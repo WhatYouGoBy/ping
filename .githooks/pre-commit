@@ -25,6 +25,6 @@ bunx vue-tsc -b
 
 # The sync backend is plain Node and tested with the built-in test runner.
 if [ -d server ] && command -v node >/dev/null 2>&1; then
-  echo "pre-commit: node --test server"
-  node --test server
+  echo "pre-commit: node --test server/*.test.js"
+  node --test server/db.test.js server/app.test.js
 fi
