@@ -55,6 +55,10 @@ The PWA is deployed separately (for example to GitHub Pages) and points at this
 backend through its `SYNC_URL` build variable. Serving the built `dist/` from the
 same process is still supported via `STATIC_DIR` (as `bun run start:server` does).
 
+`.github/workflows/container.yml` publishes the image to GHCR whenever
+semantic-release cuts a version, tagged with that version and `latest` (both
+derived from the repository, e.g. `ghcr.io/<owner>/<repo>:1.14.1`).
+
 Build-time configuration (inlined into the PWA bundle):
 
 | Variable   | Default   | Purpose                                                                                                                                        |
