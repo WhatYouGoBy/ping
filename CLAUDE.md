@@ -32,7 +32,8 @@ A "fact engine" surfaces hype lines from local match history: head-to-head domin
 
 ```
 .
-├── .github/workflows/deploy.yml   # build + deploy + semantic-release
+├── .github/workflows/deploy.yml   # verify + release + Pages deploy
+├── .github/workflows/container.yml # backend image, tagged on release
 ├── .releaserc.json                # semantic-release config
 ├── bunfig.toml                    # corp Artifactory mirror (rewritten in CI)
 ├── bun.lock                       # also rewritten in CI (URL replace)
@@ -158,13 +159,14 @@ Do **not** delete `bunfig.toml` or its corp registry URL — installs locally fa
 
 ## CI / deploy
 
-`.github/workflows/deploy.yml` has three jobs, fan-out from one workflow run:
+`.github/workflows/deploy.yml` runs on every push to `main`:
 
-1. **build** — sets up Bun, rewrites `bunfig.toml` to the public npm registry and `sed`-replaces the corp Artifactory tarball URLs in `bun.lock` (integrity hashes stay valid because the bytes are identical), runs `bun install --frozen-lockfile`, `bun test src/lib`, then `bun run build` with `GITHUB_PAGES_BASE=/<repo>/`. Uploads `dist/` as a Pages artifact.
-2. **release** — runs `cycjimmy/semantic-release-action@v4`. If the commits since the last tag warrant a release, it pushes a `chore(release): … [skip ci]` commit with the version bump and `CHANGELOG.md`, then cuts the tag + GitHub Release. Exposes `new_release_published` as a job output.
-3. **deploy** — gated on `release.outputs.new_release_published == 'true'`. Publishes the Pages artifact only when semantic-release just cut a new version. Non-release commits (`chore:`, `ci:`, `docs:`, …) build but never publish.
+1. **verify** — sets up Bun, rewrites `bunfig.toml` to the public npm registry and `sed`-replaces the corp Artifactory tarball URLs in `bun.lock` (integrity hashes stay valid because the bytes are identical), runs `bun install --frozen-lockfile`, `bun test src/lib`, then `bun run build` with `GITHUB_PAGES_BASE=/<repo>/` (validate only — the artifact is discarded).
+2. **release** — runs `cycjimmy/semantic-release-action@v4`. If the commits since the last tag warrant a release, it pushes a `chore(release): … [skip ci]` commit with the version bump and `CHANGELOG.md`, then cuts the tag + GitHub Release. Exposes `new_release_published` and `new_release_version`.
+3. **deploy** — gated on `release.outputs.new_release_published == 'true'`. Builds the PWA and publishes the Pages artifact only when semantic-release just cut a new version.
+4. **container** — gated the same way. Calls the reusable `.github/workflows/container.yml` with `new_release_version` to build and push the backend image, tagged `:<version>` and `:latest`. Non-release commits (`chore:`, `ci:`, `docs:`, …) build but never publish.
 
-Permissions are per-job (`contents: read` for build, `pages: write` + `id-token: write` for deploy, `contents: write` + `issues: write` + `pull-requests: write` for release). Top-level is `permissions: {}` to deny by default.
+Permissions are per-job (`contents: read` for verify, `pages: write` + `id-token: write` for deploy, `contents: write` + `issues: write` + `pull-requests: write` for release, `packages: write` for container). Top-level is `permissions: {}` to deny by default.
 
 Why deploy is gated this way and not on a tag-push trigger: tags pushed by the default `GITHUB_TOKEN` do not retrigger workflows (GitHub's loop guard). Reading the release job's output and gating deploy in the same workflow run avoids needing a PAT.
 

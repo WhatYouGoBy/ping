@@ -1,16 +1,22 @@
 name: container
 
 on:
-  push:
-    branches:
-      - main
-    paths-ignore:
-      - '**.md'
+  # Called by the Deploy workflow once semantic-release cuts a version, so the
+  # image is tagged with that version. A tag-push trigger would not fire:
+  # tags pushed with the default GITHUB_TOKEN do not retrigger workflows.
+  workflow_call:
+    inputs:
+      version:
+        description: Image tag to publish (the semantic-release version)
+        required: true
+        type: string
+  # Manual runs still work; pass any tag, e.g. "test".
   workflow_dispatch:
-
-concurrency:
-  group: container-${{ github.ref }}
-  cancel-in-progress: true
+    inputs:
+      version:
+        description: Image tag to publish
+        required: true
+        type: string
 
 jobs:
   build:
@@ -25,7 +31,7 @@ jobs:
 
       - name: Compute image name
         # GHCR requires a lowercase image name. github.repository keeps the
-        # owner's casing, so lower it here and reuse it for both tags.
+        # owner's casing, so lower it here and reuse it for the tags.
         run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
       - name: Log in to GHCR
@@ -41,7 +47,7 @@ jobs:
           context: .
           push: true
           tags: |
-            ${{ env.IMAGE }}:test
-            ${{ env.IMAGE }}:sha-${{ github.sha }}
+            ${{ env.IMAGE }}:${{ inputs.version }}
+            ${{ env.IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max

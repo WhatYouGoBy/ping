@@ -115,3 +115,16 @@ jobs:
           path: dist
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  container:
+    # Build and tag the backend image with the version semantic-release just
+    # cut. Lives here because tags pushed by the default GITHUB_TOKEN do not
+    # retrigger workflows, so the release output is the only reliable source.
+    needs: release
+    if: needs.release.outputs.new_release_published == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/container.yml
+    with:
+      version: ${{ needs.release.outputs.new_release_version }}
