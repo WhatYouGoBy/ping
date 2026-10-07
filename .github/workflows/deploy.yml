@@ -38,6 +38,10 @@ jobs:
         env:
           GITHUB_PAGES_BASE: /${{ github.event.repository.name }}/
           SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+          # Prefill the sync server URL for a Pages-hosted build. Set the
+          # repository variable SYNC_URL (e.g. https://ping.whatyougoby.com);
+          # empty falls back to the page's own origin.
+          SYNC_URL: ${{ vars.SYNC_URL }}
         run: bun run build
 
   release:
@@ -100,6 +104,10 @@ jobs:
         env:
           GITHUB_PAGES_BASE: /${{ github.event.repository.name }}/
           SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+          # Prefill the sync server URL for a Pages-hosted build. Set the
+          # repository variable SYNC_URL (e.g. https://ping.whatyougoby.com);
+          # empty falls back to the page's own origin.
+          SYNC_URL: ${{ vars.SYNC_URL }}
         run: bun run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
